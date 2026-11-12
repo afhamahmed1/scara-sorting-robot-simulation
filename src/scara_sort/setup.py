@@ -24,6 +24,8 @@ setup(
         'console_scripts': [
             'move_to = scara_sort.move_to:main',
             'item_spawner = scara_sort.item_spawner:main',
+            'item_detector = scara_sort.item_detector:main',
+            'vision_check = scara_sort.vision_check:main',
         ],
     },
 )

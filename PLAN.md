@@ -143,6 +143,9 @@ images drawn with OpenCV.
    `config/colours.yaml` (red is two ranges, because its hue wraps around 0). Clean each
    mask (morphological open) and find the blobs (contours). Only blobs on the belt count.
    Blobs touching the image edge are ignored until the item is fully in view.
+   For items away from the image centre the camera also sees a side face; the side facing
+   the light reaches about 0.77 of the top face's brightness. Each colour's lowest value
+   (V) is set between its top and its brightest side, so a blob is exactly the top face.
 2. **Shape**: simplify the outline (`approxPolyDP`, tolerance 4 % of its length). 3 corners
    = prism, 4 = cube. If the outline is round (circularity 4π·area/perimeter² > 0.85; a
    square scores 0.79, a circle 1.0), it is a cylinder. Any blob much smaller or larger than

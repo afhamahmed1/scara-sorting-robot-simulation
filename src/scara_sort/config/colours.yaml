@@ -1,0 +1,15 @@
+# HSV ranges of the item colours, as [[h, s, v], [h, s, v]] = lower and upper bounds.
+# OpenCV units: hue 0-180 (half degrees), saturation and value 0-255.
+#
+# Tuned on the camera image in Gazebo (see /camera/detections in RViz). Only an item's top
+# face may match: all the top faces lie in one plane, which the position needs. The side
+# faces, which the camera sees for items away from its centre line, are darker: about 100 in
+# shadow, and up to 0.77 of the top's value on the side facing the light. So each colour's
+# lowest value sits between its top (measured: red 206, yellow 217, green 181, blue 212) and
+# its brightest side. The belt, rails and floor are grey (saturation under 20) and never match.
+red:                      # hue wraps around 0, so red is two ranges
+  - [[0, 100, 175], [8, 255, 255]]
+  - [[172, 100, 175], [180, 255, 255]]
+yellow: [[18, 100, 190], [35, 255, 255]]
+green: [[50, 100, 158], [80, 255, 255]]
+blue: [[100, 100, 182], [130, 255, 255]]

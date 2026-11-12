@@ -55,3 +55,15 @@
   gz_req_type_name: "gz.msgs.Entity"
   gz_rep_type_name: "gz.msgs.Boolean"
 
+# Camera above the start of the belt
+- ros_topic_name: "camera/image"
+  gz_topic_name: "camera/image"
+  ros_type_name: "sensor_msgs/msg/Image"
+  gz_type_name: "gz.msgs.Image"
+  direction: GZ_TO_ROS
+
+- ros_topic_name: "camera/camera_info"
+  gz_topic_name: "camera/camera_info"
+  ros_type_name: "sensor_msgs/msg/CameraInfo"
+  gz_type_name: "gz.msgs.CameraInfo"
+  direction: GZ_TO_ROS

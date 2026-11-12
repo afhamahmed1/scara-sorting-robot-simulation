@@ -4,10 +4,11 @@ A SCARA robot arm with a suction cup sorts items coming down a conveyor belt, si
 Gazebo. The full design is in [PLAN.md](PLAN.md). It builds on the SCARA Driller: same arm,
 same kinematics, same joint motors.
 
-**Stages 1 and 2 of 6 are done:** the cell (the arm with its suction cup, no suction yet,
+**Stages 1 to 3 of 6 are done:** the cell (the arm with its suction cup, no suction yet,
 the conveyor belt with its encoder, four bins, the catch box, the camera on its pole) with
-`move_to` to put the cup anywhere, and the item spawner, which sends a seeded stream of
-coloured cubes, cylinders and prisms down the belt.
+`move_to` to put the cup anywhere; the item spawner, which sends a seeded stream of coloured
+cubes, cylinders and prisms down the belt; and the item detector, which names each item from
+the camera image and tracks it along the belt with the encoder.
 
 ## 1. Build
 
@@ -153,15 +154,76 @@ The simulation slows down as items pile up in the catch box (on a 4-core machine
 GPU: from real time to about half speed with 20 items in a heap). Everything runs on simulated time, so the results
 don't change, only the waiting.
 
-## 6. Unit tests
+## 6. Identifying the items
 
-The kinematics, the cell layout and the items are tested without Gazebo:
+With the simulation running and items riding along (section 5), start the detector:
+
+```bash
+ros2 run scara_sort item_detector
+```
+
+```
+[item_detector]: Camera: fx 879.2, fy 879.2 px, centre (320.0, 240.0)
+[item_detector]: #1 green prism at x 421 mm
+[item_detector]: #2 yellow cylinder at x 398 mm
+...
+```
+
+In RViz, the **Detections** image shows what the camera sees, with each item outlined and
+labelled, e.g. `#4 red cube` (`#4 ?` until it has been seen 3 times). Every confirmed item,
+with where it is now, is on `/items` ten times a second:
+
+```bash
+ros2 topic echo /items   # each item: id, colour, shape, x and y (m, where it is now), times_seen
+```
+
+How it works (`vision.py` and `tracker.py`, plain Python):
+
+1. **Colour:** one HSV mask per colour (`config/colours.yaml`), cleaned, then the blobs. Only
+   the brightly lit top faces match: the camera also sees the darker side faces of items off
+   its centre line, and they would pull the blob off centre. Blobs touching the image edge
+   wait until the item is fully in view, and blobs off the belt don't count.
+2. **Shape:** a round outline (circularity 4π·area/perimeter² > 0.85) is a cylinder; otherwise
+   the outline is simplified (`approxPolyDP`, 4 % of its length): 3 corners = prism, 4 = cube.
+   A blob much bigger or smaller than its shape (two touching items) is `unknown`.
+3. **Position:** all items are 40 mm tall, so all top faces lie in one plane, 0.61 m under the
+   camera: pixel (u, v) → (0.40 + (v − cy)·0.61/fy, −0.45 + (u − cx)·0.61/fx) m.
+4. **Tracking:** each sighting is stored as where the item sits on the belt,
+   s = y − encoder reading (read at the moment the frame was taken). Wherever the belt is now,
+   the item is at y = s + encoder now: whether the belt runs, stops or changes speed, and long
+   after it has left the camera's view. A sighting within 15 mm of an item's predicted place,
+   in the same colour, is that item; otherwise it is a new one. An item is confirmed after 3
+   sightings, and its colour and shape are the most common answers.
+
+The detector uses only the camera and the encoder, never Gazebo's true positions.
+`vision_check` compares it with the truth:
+
+```bash
+ros2 run scara_sort vision_check
+```
+
+For each item, once it has passed the pick line: what the detector called it, its largest
+position error while under the camera, and the error at the pick line, predicted from the
+encoder about 5 s after the camera last saw it. For the seeded 30-item run (seed 1):
+
+```
+[vision_check]: #1 green prism = item_00 (#1 green prism): 0.8 mm under the camera, 0.6 mm at the pick line
+[vision_check]: #2 yellow cylinder = item_01 (#2 yellow cylinder): 0.7 mm under the camera, 0.4 mm at the pick line
+...
+[vision_check]: #30 blue cylinder = item_05 (#30 blue cylinder): 0.6 mm under the camera, 0.5 mm at the pick line
+[vision_check]: 30 items: 30 named right, 0 wrong; worst error 0.9 mm under the camera, 0.7 mm at the pick line
+```
+
+## 7. Unit tests
+
+The kinematics, the cell layout, the items, the vision (on synthetic images drawn with
+OpenCV) and the tracker are tested without Gazebo:
 
 ```bash
 colcon test --packages-select scara_sort --event-handlers console_direct+
 ```
 
-It should end with `37 passed`. `test_cell.py` checks that every bin centre and corner and the
+It should end with `82 passed`. `test_cell.py` checks that every bin centre and corner and the
 whole pick zone are reachable. The hardest point is the reject bin's far corner, at
 (−0.44, 0.00) m: the shoulder turns 147° there, inside its ±150° range.
 
@@ -183,7 +245,12 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 | `src/scara_sort/scara_sort/items.py` | The items: shapes, colours, their Gazebo models, the seeded sequence |
 | `src/scara_sort/scara_sort/item_spawner.py` | `item_spawner` node: puts the items on the belt by belt travel |
 | `src/scara_sort/scara_sort/gz.py` | Adds and removes Gazebo models through the bridged services |
+| `src/scara_sort/scara_sort/vision.py` | Finds the items in an image: colour masks, shape from the outline, pixel → belt position |
+| `src/scara_sort/scara_sort/tracker.py` | Follows the items from frame to frame and predicts where they are from the encoder |
+| `src/scara_sort/scara_sort/item_detector.py` | `item_detector` node: camera + encoder → `/items` and `/camera/detections` |
+| `src/scara_sort/scara_sort/vision_check.py` | `vision_check` node: compares `/items` with the truth |
 | `src/scara_sort/config/items.yaml` | Item settings: colours, shapes, spacing, count, seed |
+| `src/scara_sort/config/colours.yaml` | HSV ranges of the colours |
 | `src/scara_sort/test/` | Unit tests |
 | `PLAN.md` | The design and the six stages |
 
@@ -193,7 +260,7 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 |---|---|---|
 | 1 cell | The arm with the cup, belt, bins, catch box, camera, `move_to` | done |
 | 2 items | `item_spawner`: 30 mixed items ride down the belt | done |
-| 3 vision | Camera → item colour, shape and position; tracking with the belt encoder | |
+| 3 vision | Camera → item colour, shape and position; tracking with the belt encoder | done |
 | 4 suction | Suction cup, `pick_place` | |
 | 5 sort | Stop-and-go sorter, referee | |
 | 6 on the move | Picking from the running belt | |
