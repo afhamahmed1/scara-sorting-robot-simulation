@@ -5,8 +5,8 @@
 1. go to the ready pose, above the pick line, 60 mm over the item tops
 2. move above the item, lower the cup to 2 mm over its top, suction on
    (nothing gripped: lift, report it and stop)
-3. lift fully, move over the bin, lower until the item is 10 mm above the bin walls,
-   suction off: the item drops into the bin
+3. lift fully, move over the bin, lower until the item is 10 mm above the bin walls (or
+   until it sits on the heap in the bin, if that is higher), suction off: it drops in
 4. back to the ready pose
 
 The sorter uses the same moves (the Arm class).
@@ -80,7 +80,9 @@ class Arm(MoveTo):
         """Carry the gripped item over a bin and drop it in. Returns the suction's message."""
         x, y = BINS[bin_name]
         self.tip_to(x, y, TRAVEL_HEIGHT)
-        self.tip_to(x, y, PLACE_HEIGHT)
+        # Going down, the item may come to sit on the heap in the bin before it gets there
+        # (the bins are small): then the arm stops, and it is let go right there
+        self.move(ik(x, y, PLACE_HEIGHT), stall=0.2)
         _, message = self.suction(False)
         return message
 

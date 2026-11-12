@@ -230,6 +230,9 @@ changing a file, not code.
    lift, log the miss and let the item ride on into the catch box.
 4. Lift fully, which also restarts the belt, since the arm is now clear of it. Move over the
    item's bin → lower to 10 mm above the walls → suction off → back to the ready pose.
+   Once a few items lie in a bin, the heap can stand higher than the walls: then the carried
+   item comes to rest on it on the way down. The arm stops there (it stalls, which the sorter
+   notices), and the item is let go right there.
 5. Log, e.g. `#7 red cube → bin 1 (3.4 s)`.
 
 **On the move (stage 6):** the belt never stops.

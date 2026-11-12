@@ -12,6 +12,7 @@ setup(
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         ('share/' + package_name + '/config', glob('config/*.yaml')),
+        ('share/' + package_name + '/launch', glob('launch/*.launch.py')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -29,6 +30,8 @@ setup(
             'suction = scara_sort.suction:main',
             'pick_place = scara_sort.pick_place:main',
             'put_item = scara_sort.put_item:main',
+            'sorter = scara_sort.sorter:main',
+            'referee = scara_sort.referee:main',
         ],
     },
 )

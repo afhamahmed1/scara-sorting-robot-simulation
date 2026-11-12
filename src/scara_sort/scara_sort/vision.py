@@ -136,9 +136,12 @@ def detect(bgr, ranges, camera):
 def draw(bgr, detections, labels):
     """A copy of the image with each detection's outline and its label (e.g. '#4 red cube')."""
     out = bgr.copy()
+    width = out.shape[1]
     for detection, label in zip(detections, labels):
         cv2.drawContours(out, [detection.contour], -1, (255, 255, 255), 2)
-        org = (int(detection.u) - 40, int(detection.v) - 30)
+        (text_width, _), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 3)
+        x = min(max(int(detection.u) - text_width // 2, 2), width - text_width - 2)  # inside
+        org = (x, int(detection.v) - 30)
         cv2.putText(out, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 3, cv2.LINE_AA)
         cv2.putText(out, label, org, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1,
                     cv2.LINE_AA)

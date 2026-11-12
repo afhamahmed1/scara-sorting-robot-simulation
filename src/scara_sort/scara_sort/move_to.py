@@ -46,8 +46,12 @@ class MoveTo(Node):
         for pub, value in zip(self.cmd_pubs, target):
             pub.publish(Float64(data=value))
 
-    def move(self, target, timeout=20.0):
-        """Send joint targets (j1, j2, j3) and wait until the arm is there. False on timeout."""
+    def move(self, target, timeout=20.0, stall=None):
+        """Send joint targets (j1, j2, j3) and wait until the arm is there. False on timeout.
+
+        stall: if given (seconds), also give up (False) once the arm has stopped moving for
+        that long without getting there, e.g. because what it carries sits on something.
+        """
         end = time.time() + timeout
 
         # 1. Wait until the bridge listens to our topics, otherwise the commands are lost
@@ -60,10 +64,17 @@ class MoveTo(Node):
         self.send(target)
 
         # 3. Wait until /joint_states shows every joint at its target
+        last, last_change = None, self.get_clock().now()
         while not self.arrived(target):
             if time.time() > end:
                 return False
             rclpy.spin_once(self, timeout_sec=0.02)
+            if stall is not None and self.joints:
+                now = [self.joints.get(name, 0.0) for name in JOINTS]
+                if last is None or max(abs(a - b) for a, b in zip(now, last)) > 1e-5:
+                    last, last_change = now, self.get_clock().now()
+                elif (self.get_clock().now() - last_change).nanoseconds * 1e-9 > stall:
+                    return False
         return True
 
 

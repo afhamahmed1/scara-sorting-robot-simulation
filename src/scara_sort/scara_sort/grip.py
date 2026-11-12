@@ -26,3 +26,13 @@ def item_under_cup(cup, items):
         if -ABOVE <= gap <= BELOW and distance <= best_distance:
             best, best_distance = name, distance
     return best
+
+
+def nearest_item(cup, items):
+    """(name, mm sideways, mm from the cup down to its top) of the item nearest the cup's axis,
+    or None. For telling why nothing was gripped."""
+    cx, cy, cz = cup
+    if not items:
+        return None
+    name, (x, y, z) = min(items.items(), key=lambda kv: hypot(kv[1][0] - cx, kv[1][1] - cy))
+    return name, hypot(x - cx, y - cy) * 1000, (cz - (z + SIZE / 2)) * 1000

@@ -45,7 +45,7 @@ from std_srvs.srv import SetBool
 from tf2_msgs.msg import TFMessage
 
 from scara_sort.cell import BELT_TOP
-from scara_sort.grip import item_under_cup
+from scara_sort.grip import item_under_cup, nearest_item
 from scara_sort.gz import GzWorld
 from scara_sort.item_spawner import POOL, pool_name
 from scara_sort.kinematics import fk
@@ -66,6 +66,7 @@ class Suction(Node):
     def __init__(self):
         super().__init__('suction')
         self.joints = {}
+        self.joint_updates = 0  # how many /joint_states have come in
         self.items = {}        # item name -> (x, y, z) true centre
         self.held = None       # name of the item in the cup
         self.gripping = None   # name of the item being gripped or held
@@ -82,10 +83,11 @@ class Suction(Node):
             self.gz.subscribe(StringMsg, f'/scara/suction/{name}/state',
                               lambda msg, name=name: self.on_state(name, msg.data))
 
+        # Queues of 1: always work from the latest message, never from a backlog
         group = ReentrantCallbackGroup()  # the service waits while the topics keep coming in
-        self.create_subscription(JointState, '/joint_states', self.on_joint_states, 10,
+        self.create_subscription(JointState, '/joint_states', self.on_joint_states, 1,
                                  callback_group=group)
-        self.create_subscription(TFMessage, '/gz/poses', self.on_poses, 10, callback_group=group)
+        self.create_subscription(TFMessage, '/gz/poses', self.on_poses, 1, callback_group=group)
 
         self.warm_up()
         self.warming_up = False
@@ -112,6 +114,21 @@ class Suction(Node):
 
     def on_joint_states(self, msg):
         self.joints.update(zip(msg.name, msg.position))
+        self.joint_updates += 1
+
+    def cup_standing_still(self, timeout=1.0):
+        """Wait for fresh joint states showing the cup still (the arm may have only just
+        arrived, and this node may not have seen that yet). False on timeout."""
+        end = time.time() + timeout
+        last, seen = None, self.joint_updates
+        while time.time() < end:
+            if self.joint_updates >= seen + 2:   # two new messages since the last look
+                cup = self.cup()
+                if last is not None and max(abs(a - b) for a, b in zip(cup, last)) < 0.0001:
+                    return True
+                last, seen = cup, self.joint_updates
+            time.sleep(0.005)
+        return False
 
     def on_poses(self, msg):
         # Each message lists every item in the world: removed ones must not linger
@@ -172,8 +189,14 @@ class Suction(Node):
     def grip(self):
         if self.held:
             return True, f'already holding {self.held}'
+        if not self.cup_standing_still():
+            return False, 'the arm is still moving'
         name = self.under_cup()
         if name is None:
+            nearest = nearest_item(self.cup(), self.items)
+            if nearest and nearest[1] < 100:
+                self.get_logger().info('Nothing under the cup: nearest %s, %.1f mm sideways, '
+                                       'top %.1f mm below the cup' % nearest)
             return False, 'nothing under the cup'
         self.gripping = name
         self.attach_pubs[name].publish(Empty())

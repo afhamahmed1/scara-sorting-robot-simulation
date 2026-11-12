@@ -1,0 +1,6 @@
+# Sort by shape. The first rule that matches an item wins; '*' matches anything.
+rules:
+  - {colour: '*', shape: cube,     bin: 1}
+  - {colour: '*', shape: cylinder, bin: 2}
+  - {colour: '*', shape: prism,    bin: 3}
+  - {colour: '*', shape: '*',      bin: reject}   # unknown

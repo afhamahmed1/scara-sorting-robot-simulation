@@ -4,12 +4,22 @@ A SCARA robot arm with a suction cup sorts items coming down a conveyor belt, si
 Gazebo. The full design is in [PLAN.md](PLAN.md). It builds on the SCARA Driller: same arm,
 same kinematics, same joint motors.
 
-**Stages 1 to 4 of 6 are done:** the cell (the arm with its suction cup, the conveyor belt
-with its encoder, four bins, the catch box, the camera on its pole) with `move_to` to put the
-cup anywhere; the item spawner, which sends a seeded stream of coloured cubes, cylinders and
-prisms down the belt; the item detector, which names each item from the camera image and
-tracks it along the belt with the encoder; and the suction cup, with `pick_place` to move one
-item from the belt into a bin.
+**Stages 1 to 5 of 6 are done:** the cell (the arm with its suction cup, the conveyor belt
+with its encoder, four bins, the catch box, the camera on its pole); the item spawner, which
+sends a seeded stream of coloured cubes, cylinders and prisms down the belt; the item
+detector, which names each item from the camera image and tracks it along the belt with the
+encoder; the suction cup; and the sorter, which stops the belt for each item and puts it in
+its bin, with a referee that scores every item from Gazebo's true positions.
+
+Quick start, everything at once (after building, section 1):
+
+```bash
+ros2 launch scara_sort sort.launch.py
+```
+
+```
+[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 8.3 items/min
+```
 
 ## 1. Build
 
@@ -282,16 +292,90 @@ switches the suction off.
 Tested 10 times for each shape, each item put down at a random angle: all 30 landed in bin 1,
 and while carried the item stayed exactly where it was welded under the cup.
 
-## 9. Unit tests
+## 9. Sorting (stop-and-go)
+
+One command starts the simulation, the suction node, the spawner, the detector, the sorter
+and the referee:
+
+```bash
+ros2 launch scara_sort sort.launch.py
+```
+
+The suction node warms up first; the spawner and the sorter wait for it. Then:
+
+```
+[sorter]: Sorting by config/sort_by_colour.yaml, stop-and-go, belt at 50 mm/s
+[sorter]: #1 green prism → bin 2 (4.5 s)
+[referee]: #1 item_00 green prism: bin 2 ✓
+[sorter]: #2 yellow cylinder → bin reject (3.2 s)
+[referee]: #2 item_01 yellow cylinder: bin reject ✓
+[sorter]: #3 yellow cube → bin reject (3.3 s)
+[referee]: #3 item_02 yellow cube: bin reject ✓
+...
+[sorter]: #30 blue cylinder → bin 3 (3.4 s)
+[referee]: #30 item_05 blue cylinder: bin 3 ✓
+[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 8.3 items/min
+```
+
+The sort cycle, for each item:
+
+1. Wait at the ready pose: above the pick line, 60 mm over the item tops.
+2. When the item's predicted position reaches y = −20 mm, stop the belt (it stops within
+   3 mm).
+3. Move above the item, lower to 2 mm over its top, suction on. If nothing was gripped: lift,
+   log the miss, and let the item ride on into the catch box.
+4. Lift fully, which restarts the belt (the arm is now clear of it), move over the item's
+   bin, lower until the item is 10 mm over the walls, suction off, back to the ready pose.
+   (The bins are small: once a few items lie in one, the heap can stand higher than the
+   walls. Then the item comes to rest on the heap on the way down, the arm stops there, and
+   the item is let go right there.)
+5. Log `#7 red cube → bin 1 (3.4 s)`: simulated seconds from the belt stopping to letting go.
+
+The sorter works only from `/items` (the camera) and the belt's encoder. The referee alone
+looks at Gazebo's true positions: once an item has lain still for 1 s off the belt, it records
+**correct** (in its bin), **wrong bin**, **missed** (in the catch box) or **dropped**
+(anywhere else). items/min counts the correct items per minute of simulated time, from the
+first item appearing to the last outcome. Ctrl-C stops the belt and switches the suction off.
+
+Which item goes where is in a rules file: the first rule that matches wins, `'*'` matches
+anything.
+
+```yaml
+# config/sort_by_colour.yaml
+rules:
+  - {colour: red,   shape: '*', bin: 1}
+  - {colour: green, shape: '*', bin: 2}
+  - {colour: blue,  shape: '*', bin: 3}
+  - {colour: '*',   shape: '*', bin: reject}   # yellow, unknown, ...
+```
+
+Sorting by shape needs no code change, just the other file (cubes to bin 1, cylinders to 2,
+prisms to 3):
+
+```bash
+ros2 launch scara_sort sort.launch.py rules:=config/sort_by_shape.yaml
+```
+
+Rules can mix colour and shape too, e.g. `{colour: red, shape: cube, bin: 1}`. Other launch
+arguments: `count:=10`, `seed:=2`, `speed:=0.05` (m/s), `gui:=false`, `rviz:=false`.
+
+In RViz, **Sorting** shows the pick zone on the belt (blue, with the pick line), the bins, and
+every item the camera has seen, in its colour, labelled with the bin it goes to (`#7 → 1`).
+
+The nodes can also be started one by one, each in its own terminal, after `sim.launch.py`:
+`suction`, `item_spawner`, `item_detector`, `sorter`, `referee` (the last two with
+`--ros-args -p rules:=config/sort_by_shape.yaml` for shapes).
+
+## 10. Unit tests
 
 The kinematics, the cell layout, the items, the vision (on synthetic images drawn with
-OpenCV), the tracker and the suction's grip check are tested without Gazebo:
+OpenCV), the tracker, the suction's grip check and the sort rules are tested without Gazebo:
 
 ```bash
 colcon test --packages-select scara_sort --event-handlers console_direct+
 ```
 
-It should end with `90 passed`. `test_cell.py` checks that every bin centre and corner and the
+It should end with `105 passed`. `test_cell.py` checks that every bin centre and corner and the
 whole pick zone are reachable. The hardest point is the reject bin's far corner, at
 (−0.44, 0.00) m: the shoulder turns 147° there, inside its ±150° range.
 
@@ -321,6 +405,11 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 | `src/scara_sort/scara_sort/suction.py` | `suction` node: warm-up, then `/suction` on/off with the DetachableJoint plugins |
 | `src/scara_sort/scara_sort/pick_place.py` | `pick_place` node, and the `Arm` class with the pick and place moves |
 | `src/scara_sort/scara_sort/put_item.py` | `put_item` node: puts one item on the belt, for trying things by hand |
+| `src/scara_sort/scara_sort/rules.py` | Sort rules: which bin each kind of item goes into |
+| `src/scara_sort/scara_sort/sorter.py` | `sorter` node: the sort cycle, belt control, RViz markers |
+| `src/scara_sort/scara_sort/referee.py` | `referee` node: scores where each item really ended up |
+| `src/scara_sort/launch/sort.launch.py` | Starts everything: simulation, suction, spawner, detector, sorter, referee |
+| `src/scara_sort/config/sort_by_colour.yaml`, `sort_by_shape.yaml` | Rules files |
 | `src/scara_sort/config/items.yaml` | Item settings: colours, shapes, spacing, count, seed |
 | `src/scara_sort/config/colours.yaml` | HSV ranges of the colours |
 | `src/scara_sort/test/` | Unit tests |
@@ -334,5 +423,5 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 | 2 items | `item_spawner`: 30 mixed items ride down the belt | done |
 | 3 vision | Camera → item colour, shape and position; tracking with the belt encoder | done |
 | 4 suction | Suction cup, `pick_place` | done |
-| 5 sort | Stop-and-go sorter, referee | |
+| 5 sort | Stop-and-go sorter, referee | done |
 | 6 on the move | Picking from the running belt | |
