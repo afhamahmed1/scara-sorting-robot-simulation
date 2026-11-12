@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>scara_sort</name>
+  <version>0.1.0</version>
+  <description>Kinematics, vision, tracking and the nodes that sort items off the conveyor belt.</description>
+  <maintainer email="afham12ahmed@gmail.com">Afham Ahmed</maintainer>
+  <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>scara_sort_sim</exec_depend>
+
+  <test_depend>python3-pytest</test_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

@@ -1,0 +1,55 @@
+<?xml version="1.0"?>
+<!-- Sorting bin. Origin: centre of the bin, on the floor.
+     A stand up to z 0.15 (the bin floor) and four walls up to z 0.23, 0.12 x 0.12 m inside. -->
+<sdf version="1.10">
+  <model name="sort_bin">
+    <static>true</static>
+    <link name="link">
+      <collision name="stand">
+        <pose>0 0 0.075 0 0 0</pose>
+        <geometry><box><size>0.14 0.14 0.15</size></box></geometry>
+      </collision>
+      <visual name="stand_visual">
+        <pose>0 0 0.075 0 0 0</pose>
+        <geometry><box><size>0.14 0.14 0.15</size></box></geometry>
+        <material><diffuse>0.45 0.45 0.5 1</diffuse><ambient>0.45 0.45 0.5 1</ambient></material>
+      </visual>
+      <collision name="wall_front">
+        <pose>0.065 0 0.19 0 0 0</pose>
+        <geometry><box><size>0.01 0.14 0.08</size></box></geometry>
+      </collision>
+      <visual name="wall_front_visual">
+        <pose>0.065 0 0.19 0 0 0</pose>
+        <geometry><box><size>0.01 0.14 0.08</size></box></geometry>
+        <material><diffuse>0.25 0.45 0.75 1</diffuse><ambient>0.25 0.45 0.75 1</ambient></material>
+      </visual>
+      <collision name="wall_back">
+        <pose>-0.065 0 0.19 0 0 0</pose>
+        <geometry><box><size>0.01 0.14 0.08</size></box></geometry>
+      </collision>
+      <visual name="wall_back_visual">
+        <pose>-0.065 0 0.19 0 0 0</pose>
+        <geometry><box><size>0.01 0.14 0.08</size></box></geometry>
+        <material><diffuse>0.25 0.45 0.75 1</diffuse><ambient>0.25 0.45 0.75 1</ambient></material>
+      </visual>
+      <collision name="wall_left">
+        <pose>0 0.065 0.19 0 0 0</pose>
+        <geometry><box><size>0.12 0.01 0.08</size></box></geometry>
+      </collision>
+      <visual name="wall_left_visual">
+        <pose>0 0.065 0.19 0 0 0</pose>
+        <geometry><box><size>0.12 0.01 0.08</size></box></geometry>
+        <material><diffuse>0.25 0.45 0.75 1</diffuse><ambient>0.25 0.45 0.75 1</ambient></material>
+      </visual>
+      <collision name="wall_right">
+        <pose>0 -0.065 0.19 0 0 0</pose>
+        <geometry><box><size>0.12 0.01 0.08</size></box></geometry>
+      </collision>
+      <visual name="wall_right_visual">
+        <pose>0 -0.065 0.19 0 0 0</pose>
+        <geometry><box><size>0.12 0.01 0.08</size></box></geometry>
+        <material><diffuse>0.25 0.45 0.75 1</diffuse><ambient>0.25 0.45 0.75 1</ambient></material>
+      </visual>
+    </link>
+  </model>
+</sdf>

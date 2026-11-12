@@ -1,0 +1,139 @@
+# SCARA Sorter
+
+A SCARA robot arm with a suction cup sorts items coming down a conveyor belt, simulated in
+Gazebo. The full design is in [PLAN.md](PLAN.md). It builds on the SCARA Driller: same arm,
+same kinematics, same joint motors.
+
+**Stage 1 of 6 is done:** the cell. The arm with its suction cup (no suction yet), the
+conveyor belt with its encoder, four bins, the catch box, the camera on its pole and a grey
+test box, plus `move_to` to put the cup anywhere.
+
+## 1. Build
+
+The repo is the workspace:
+
+```bash
+git clone https://github.com/afhamahmed1/scara-sorting-robot-simulation.git ~/Robotics/Projects/scara_sort_ws
+cd ~/Robotics/Projects/scara_sort_ws
+source /opt/ros/jazzy/setup.bash
+colcon build
+```
+
+Run `colcon build` again after every change.
+
+## 2. Run
+
+```bash
+source ~/Robotics/Projects/scara_sort_ws/install/setup.bash
+ros2 launch scara_sort_sim sim.launch.py
+```
+
+Gazebo shows the orange arm on its grey column, a dark belt running along x = 0.40 m with
+low rails on both sides, four blue bins on the robot's left and behind it, a brown catch box
+past the end of the belt, and the camera on its pole above the start of the belt. A grey
+test box sits at the start of the belt. RViz shows the arm.
+
+`gui:=false` runs Gazebo without its window and `rviz:=false` leaves out RViz.
+
+## 3. Run the belt
+
+In a second terminal (run `source ~/Robotics/Projects/scara_sort_ws/install/setup.bash` first):
+
+```bash
+ros2 topic pub --once /conveyor/cmd_vel std_msgs/msg/Float64 "{data: 0.05}"   # 50 mm/s
+```
+
+The test box rides along the belt (+y) and, after about 27 s, drops off the end into the
+catch box. Stop the belt with `"{data: 0.0}"`.
+
+The belt's encoder counts how far the belt has moved, in metres:
+
+```bash
+ros2 topic echo /conveyor/odom --field pose.pose.position.x   # counts up 0.05 per second
+ros2 topic echo /conveyor/odom --field twist.twist.linear.x   # 0.05 while it runs
+```
+
+The belt is Gazebo's `TrackController` on a static box: it drags whatever lies on it at the
+commanded speed, starting and stopping at 0.5 m/s² so items don't slide.
+
+## 4. Move the cup tip to a point
+
+```bash
+ros2 run scara_sort move_to 400 0 100
+```
+
+X and Y are measured from the robot's base (x forward, y to the left), Z is the height of the
+cup tip above the **belt**, all in millimetres. This is the ready pose, 60 mm above the tops
+of the items (they are 40 mm tall):
+
+```
+Moving: j1 -38.6°, j2 87.1°, j3 30.0 mm
+Arrived: tip at (400.0, -0.0, 100.0) mm, 0.00 mm from the target
+```
+
+Check it with TF (z is the belt top at 0.20 m plus 0.10 m):
+
+```bash
+ros2 run tf2_ros tf2_echo world cup_tip   # Translation: [0.400, -0.000, 0.300]
+```
+
+Every bin centre (80 mm above the belt is 10 mm over the bin walls with an item hanging under
+the cup) and both ends of the pick zone (42 mm is 2 mm over an item's top):
+
+```bash
+ros2 run scara_sort move_to 120 400 80     # bin 1:      j1 37.0°,  j2 81.6°
+ros2 run scara_sort move_to -120 420 80    # bin 2:      j1 72.3°,  j2 75.2°
+ros2 run scara_sort move_to -340 240 80    # bin 3:      j1 108.3°, j2 82.1°
+ros2 run scara_sort move_to -380 60 80     # reject bin: j1 130.5°, j2 91.7°
+ros2 run scara_sort move_to 400 -150 42    # start of the pick zone
+ros2 run scara_sort move_to 400 150 42     # end of the pick zone
+```
+
+Each one ends with `0.00 mm from the target`.
+
+The kinematics are the driller's (see its README): the arm reaches 172 to 550 mm from the
+base, and the cup tip goes from 20 mm below to 130 mm above the belt. The motors are twice
+as fast: j1 and j2 at 2 rad/s, j3 at 0.2 m/s. Points out of reach are refused:
+
+```bash
+ros2 run scara_sort move_to 600 0 50   # Refused: 600 mm from the base, but the arm reaches 172 to 550 mm
+```
+
+## 5. Unit tests
+
+The kinematics and the cell layout are tested without Gazebo:
+
+```bash
+colcon test --packages-select scara_sort --event-handlers console_direct+
+```
+
+It should end with `22 passed`. `test_cell.py` checks that every bin centre and corner and the
+whole pick zone are reachable. The hardest point is the reject bin's far corner, at
+(−0.44, 0.00) m: the shoulder turns 147° there, inside its ±150° range.
+
+## Files
+
+| File | What it does |
+|---|---|
+| `src/scara_sort_sim/urdf/scara.urdf.xacro` | The arm: column, two links, quill with vacuum tube and suction cup, `cup_tip` frame, joint motors |
+| `src/scara_sort_sim/worlds/sort_cell.sdf` | The cell: belt (with `TrackController`), frame and rails, bins, catch box, camera on its pole, test box |
+| `src/scara_sort_sim/models/sort_bin/` | One bin, used four times by the world |
+| `src/scara_sort_sim/config/bridge.yaml` | Which topics are copied between Gazebo and ROS 2 |
+| `src/scara_sort_sim/launch/sim.launch.py` | Starts Gazebo, the arm, the bridge and RViz |
+| `src/scara_sort_sim/rviz/sort.rviz` | RViz layout |
+| `src/scara_sort/scara_sort/kinematics.py` | IK and FK: joint angles ↔ cup tip position (the driller's) |
+| `src/scara_sort/scara_sort/cell.py` | Where everything in the cell is: belt, camera, pick zone, bins, catch box |
+| `src/scara_sort/scara_sort/move_to.py` | `move_to` node: point in mm → IK → joint motors, waits until the arm arrives |
+| `src/scara_sort/test/` | Unit tests |
+| `PLAN.md` | The design and the six stages |
+
+## Stages
+
+| Stage | What it adds | Status |
+|---|---|---|
+| 1 cell | The arm with the cup, belt, bins, catch box, camera, `move_to` | done |
+| 2 items | `item_spawner`: 30 mixed items ride down the belt | |
+| 3 vision | Camera → item colour, shape and position; tracking with the belt encoder | |
+| 4 suction | Suction cup, `pick_place` | |
+| 5 sort | Stop-and-go sorter, referee | |
+| 6 on the move | Picking from the running belt | |

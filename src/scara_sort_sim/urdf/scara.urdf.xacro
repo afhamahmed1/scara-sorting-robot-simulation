@@ -1,0 +1,175 @@
+<?xml version="1.0"?>
+<!-- SCARA sorting arm: the driller's arm with a suction cup instead of the drill.
+     A column, two arm links that swing around vertical axes (j1, j2) and a quill that
+     slides the cup straight down (j3). The cup's tip sits exactly where the drill tip was. -->
+<robot name="scara" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:property name="column_height" value="0.40"/>
+  <xacro:property name="l1" value="0.30"/>  <!-- shoulder (j1) to elbow (j2) -->
+  <xacro:property name="l2" value="0.25"/>  <!-- elbow (j2) to cup axis (j3) -->
+  <xacro:property name="arm_width" value="0.08"/>
+  <xacro:property name="arm_thickness" value="0.05"/>
+  <xacro:property name="tip_below_quill" value="0.12"/>  <!-- cup tip under the end of link 2 -->
+
+  <!-- Working range: j1 ±150°, j2 ±145°, j3 0 to 0.15 m. The end stops (joint limits) sit a bit
+       further out, because in Gazebo a motor can't drive a joint back off an end stop it has hit. -->
+
+  <!-- Inertia of a solid box / upright cylinder (physics needs mass and inertia on every link) -->
+  <xacro:macro name="box_inertia" params="m x y z xyz">
+    <inertial>
+      <origin xyz="${xyz}"/>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(y*y+z*z)/12}" iyy="${m*(x*x+z*z)/12}" izz="${m*(x*x+y*y)/12}"
+               ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <xacro:macro name="cylinder_inertia" params="m r h xyz">
+    <inertial>
+      <origin xyz="${xyz}"/>
+      <mass value="${m}"/>
+      <inertia ixx="${m*(3*r*r+h*h)/12}" iyy="${m*(3*r*r+h*h)/12}" izz="${m*r*r/2}"
+               ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- "world" + a fixed joint bolts the robot to the ground, so Gazebo doesn't let it fall over -->
+  <link name="world"/>
+
+  <joint name="world_joint" type="fixed">
+    <parent link="world"/>
+    <child link="base_link"/>
+  </joint>
+
+  <!-- Base column, 0.40 m tall -->
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 ${column_height/2}"/>
+      <geometry><cylinder radius="0.06" length="${column_height}"/></geometry>
+      <material name="dark_grey"><color rgba="0.25 0.25 0.25 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="0 0 ${column_height/2}"/>
+      <geometry><cylinder radius="0.06" length="${column_height}"/></geometry>
+    </collision>
+    <xacro:cylinder_inertia m="5.0" r="0.06" h="${column_height}" xyz="0 0 ${column_height/2}"/>
+  </link>
+
+  <!-- j1 shoulder: on top of the column, turns link 1 around the vertical axis -->
+  <joint name="j1" type="revolute">
+    <parent link="base_link"/>
+    <child link="link1"/>
+    <origin xyz="0 0 ${column_height}"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${radians(-155)}" upper="${radians(155)}" effort="50" velocity="2"/>
+  </joint>
+
+  <!-- Link 1. The box is a bit longer than l1 so its ends cover both joints. -->
+  <link name="link1">
+    <visual>
+      <origin xyz="${l1/2} 0 ${arm_thickness/2}"/>
+      <geometry><box size="${l1 + arm_width} ${arm_width} ${arm_thickness}"/></geometry>
+      <material name="orange"><color rgba="1 0.45 0.1 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="${l1/2} 0 ${arm_thickness/2}"/>
+      <geometry><box size="${l1 + arm_width} ${arm_width} ${arm_thickness}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="2.0" x="${l1 + arm_width}" y="${arm_width}" z="${arm_thickness}"
+                       xyz="${l1/2} 0 ${arm_thickness/2}"/>
+  </link>
+
+  <!-- j2 elbow: at the end of link 1; link 2 sits on top of link 1 -->
+  <joint name="j2" type="revolute">
+    <parent link="link1"/>
+    <child link="link2"/>
+    <origin xyz="${l1} 0 ${arm_thickness}"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="${radians(-150)}" upper="${radians(150)}" effort="50" velocity="2"/>
+  </joint>
+
+  <link name="link2">
+    <visual>
+      <origin xyz="${l2/2} 0 ${arm_thickness/2}"/>
+      <geometry><box size="${l2 + arm_width} ${arm_width} ${arm_thickness}"/></geometry>
+      <material name="orange"><color rgba="1 0.45 0.1 1"/></material>
+    </visual>
+    <collision>
+      <origin xyz="${l2/2} 0 ${arm_thickness/2}"/>
+      <geometry><box size="${l2 + arm_width} ${arm_width} ${arm_thickness}"/></geometry>
+    </collision>
+    <xacro:box_inertia m="1.5" x="${l2 + arm_width}" y="${arm_width}" z="${arm_thickness}"
+                       xyz="${l2/2} 0 ${arm_thickness/2}"/>
+  </link>
+
+  <!-- j3 quill: at the end of link 2, slides straight down (axis -z) -->
+  <joint name="j3" type="prismatic">
+    <parent link="link2"/>
+    <child link="quill"/>
+    <origin xyz="${l2} 0 0"/>
+    <axis xyz="0 0 -1"/>
+    <limit lower="-0.005" upper="0.155" effort="100" velocity="0.5"/>
+  </joint>
+
+  <!-- Quill: a shaft through link 2, a vacuum tube and the suction cup (a black disc).
+       No collision shapes, like the driller's drill: the cup must never push items around. -->
+  <link name="quill">
+    <visual>
+      <origin xyz="0 0 0.09"/>
+      <geometry><cylinder radius="0.012" length="0.22"/></geometry>
+      <material name="silver"><color rgba="0.75 0.75 0.75 1"/></material>
+    </visual>
+    <visual>
+      <origin xyz="0 0 -0.065"/>
+      <geometry><cylinder radius="0.006" length="0.09"/></geometry>  <!-- vacuum tube -->
+      <material name="silver"><color rgba="0.75 0.75 0.75 1"/></material>
+    </visual>
+    <visual>
+      <origin xyz="0 0 -0.115"/>
+      <geometry><cylinder radius="0.016" length="0.01"/></geometry>  <!-- 32 mm suction cup -->
+      <material name="black"><color rgba="0.05 0.05 0.05 1"/></material>
+    </visual>
+    <xacro:cylinder_inertia m="0.5" r="0.025" h="0.32" xyz="0 0 0.04"/>
+  </link>
+
+  <!-- cup_tip: the face of the suction cup. With all joints at 0 it is at x 0.55, y 0, z 0.33. -->
+  <link name="cup_tip"/>
+
+  <joint name="cup_tip_joint" type="fixed">
+    <parent link="quill"/>
+    <child link="cup_tip"/>
+    <origin xyz="0 0 ${-tip_below_quill}"/>
+  </joint>
+
+  <!-- ===== Gazebo ===== -->
+
+  <!-- A motor that drives a joint to the position sent on its topic, at up to `speed`.
+       use_velocity_commands: the motor sets the joint speed directly, so the quill
+       holds its height instead of sagging under gravity. -->
+  <xacro:macro name="motor" params="joint speed">
+    <plugin filename="gz-sim-joint-position-controller-system"
+            name="gz::sim::systems::JointPositionController">
+      <joint_name>${joint}</joint_name>
+      <topic>scara/${joint}_cmd</topic>
+      <use_velocity_commands>true</use_velocity_commands>
+      <cmd_max>${speed}</cmd_max>
+    </plugin>
+  </xacro:macro>
+
+  <gazebo>
+    <!-- Twice the driller's speeds: nothing is being cut here -->
+    <xacro:motor joint="j1" speed="2.0"/>  <!-- rad/s -->
+    <xacro:motor joint="j2" speed="2.0"/>  <!-- rad/s -->
+    <xacro:motor joint="j3" speed="0.2"/>  <!-- m/s -->
+
+    <!-- Publishes the joint positions on /joint_states -->
+    <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher">
+      <joint_name>j1</joint_name>
+      <joint_name>j2</joint_name>
+      <joint_name>j3</joint_name>
+      <topic>joint_states</topic>
+      <update_rate>50</update_rate>
+    </plugin>
+  </gazebo>
+
+</robot>

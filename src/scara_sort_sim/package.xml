@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>scara_sort_sim</name>
+  <version>0.1.0</version>
+  <description>SCARA sorting cell in Gazebo: arm with suction cup, conveyor belt, bins, camera, bridge and launch file.</description>
+  <maintainer email="afham12ahmed@gmail.com">Afham Ahmed</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>xacro</exec_depend>
+  <exec_depend>robot_state_publisher</exec_depend>
+  <exec_depend>ros_gz_sim</exec_depend>
+  <exec_depend>ros_gz_bridge</exec_depend>
+  <exec_depend>rviz2</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+    <!-- Lets Gazebo find model://sort_bin in this package's models folder -->
+    <gazebo_ros gazebo_model_path="${prefix}/models"/>
+  </export>
+</package>

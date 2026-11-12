@@ -1,0 +1,271 @@
+<?xml version="1.0"?>
+<!-- Sort cell, all in metres. The robot base is at (0, 0), x forward, y to the robot's left.
+
+     belt        x 0.32 - 0.48, y -0.70 - +0.70, top at z 0.20, moves items towards +y
+     camera      above (0.40, -0.45) at z 0.85, looking straight down, on a pole at (0.70, -0.45)
+     bins        centres 1 (0.12, 0.40), 2 (-0.12, 0.42), 3 (-0.34, 0.24), reject (-0.38, 0.06),
+                 0.12 x 0.12 m inside, floor at z 0.15, walls up to z 0.23
+     catch box   x 0.30 - 0.50, y 0.72 - 0.92 on the floor, catches whatever rides off the belt -->
+<sdf version="1.10">
+  <world name="sort_cell">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <!-- Renders the camera image -->
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <ambient>0.5 0.5 0.5 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>false</shadows>
+    </scene>
+
+    <!-- No shadows: a shadow on the belt would change the colours the camera sees -->
+    <light type="directional" name="sun">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <direction>-0.3 0.1 -0.95</direction>
+    </light>
+
+    <model name="ground">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material><diffuse>0.6 0.6 0.55 1</diffuse><ambient>0.6 0.6 0.55 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== Conveyor belt ===== -->
+
+    <!-- The belt surface. TrackController makes it drag whatever lies on it along +y at the
+         commanded speed, like a real belt, although the box itself never moves.
+           /conveyor/cmd_vel  gz.msgs.Double    speed in m/s, 0 stops it
+           /conveyor/odom     gz.msgs.Odometry  pose.position.x = metres of belt travelled (encoder) -->
+    <model name="conveyor">
+      <static>true</static>
+      <link name="belt">
+        <collision name="collision">
+          <pose>0.40 0 0.185 0 0 0</pose>
+          <geometry><box><size>0.16 1.40 0.03</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <pose>0.40 0 0.185 0 0 0</pose>
+          <geometry><box><size>0.16 1.40 0.03</size></box></geometry>
+          <material><diffuse>0.12 0.12 0.12 1</diffuse><ambient>0.12 0.12 0.12 1</ambient></material>
+        </visual>
+        <visual name="roller_start">
+          <pose>0.40 -0.70 0.185 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.016</radius><length>0.17</length></cylinder></geometry>
+          <material><diffuse>0.3 0.3 0.3 1</diffuse><ambient>0.3 0.3 0.3 1</ambient></material>
+        </visual>
+        <visual name="roller_end">
+          <pose>0.40 0.70 0.185 0 1.5708 0</pose>
+          <geometry><cylinder><radius>0.016</radius><length>0.17</length></cylinder></geometry>
+          <material><diffuse>0.3 0.3 0.3 1</diffuse><ambient>0.3 0.3 0.3 1</ambient></material>
+        </visual>
+      </link>
+      <plugin filename="gz-sim-track-controller-system" name="gz::sim::systems::TrackController">
+        <link>belt</link>
+        <track_orientation>0 0 1.5707963</track_orientation>  <!-- the track moves along +y -->
+        <velocity_topic>/conveyor/cmd_vel</velocity_topic>
+        <odometry_topic>/conveyor/odom</odometry_topic>
+        <odometry_publish_frequency>50</odometry_publish_frequency>
+        <min_velocity>-0.2</min_velocity>
+        <max_velocity>0.2</max_velocity>
+        <!-- Gentle start and stop, so items don't slide: from 50 mm/s it stops within 3 mm -->
+        <min_acceleration>-0.5</min_acceleration>
+        <max_acceleration>0.5</max_acceleration>
+      </plugin>
+    </model>
+
+    <!-- Frame under the belt and low side rails along it -->
+    <model name="conveyor_frame">
+      <static>true</static>
+      <link name="link">
+        <collision name="support">
+          <pose>0.40 0 0.085 0 0 0</pose>
+          <geometry><box><size>0.12 1.30 0.17</size></box></geometry>
+        </collision>
+        <visual name="support_visual">
+          <pose>0.40 0 0.085 0 0 0</pose>
+          <geometry><box><size>0.12 1.30 0.17</size></box></geometry>
+          <material><diffuse>0.45 0.45 0.48 1</diffuse><ambient>0.45 0.45 0.48 1</ambient></material>
+        </visual>
+        <collision name="rail_right">
+          <pose>0.315 0 0.2025 0 0 0</pose>
+          <geometry><box><size>0.01 1.40 0.025</size></box></geometry>
+        </collision>
+        <visual name="rail_right_visual">
+          <pose>0.315 0 0.2025 0 0 0</pose>
+          <geometry><box><size>0.01 1.40 0.025</size></box></geometry>
+          <material><diffuse>0.7 0.7 0.72 1</diffuse><ambient>0.7 0.7 0.72 1</ambient></material>
+        </visual>
+        <collision name="rail_left">
+          <pose>0.485 0 0.2025 0 0 0</pose>
+          <geometry><box><size>0.01 1.40 0.025</size></box></geometry>
+        </collision>
+        <visual name="rail_left_visual">
+          <pose>0.485 0 0.2025 0 0 0</pose>
+          <geometry><box><size>0.01 1.40 0.025</size></box></geometry>
+          <material><diffuse>0.7 0.7 0.72 1</diffuse><ambient>0.7 0.7 0.72 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== Catch box: whatever nobody picks rides off the end of the belt into it ===== -->
+    <model name="catch_box">
+      <static>true</static>
+      <pose>0.40 0.82 0 0 0 0</pose>
+      <link name="link">
+        <collision name="floor">
+          <pose>0 0 0.0025 0 0 0</pose>
+          <geometry><box><size>0.22 0.22 0.005</size></box></geometry>
+        </collision>
+        <visual name="floor_visual">
+          <pose>0 0 0.0025 0 0 0</pose>
+          <geometry><box><size>0.22 0.22 0.005</size></box></geometry>
+          <material><diffuse>0.35 0.3 0.25 1</diffuse><ambient>0.35 0.3 0.25 1</ambient></material>
+        </visual>
+        <collision name="wall_near">
+          <pose>0 -0.105 0.05 0 0 0</pose>
+          <geometry><box><size>0.22 0.01 0.10</size></box></geometry>
+        </collision>
+        <visual name="wall_near_visual">
+          <pose>0 -0.105 0.05 0 0 0</pose>
+          <geometry><box><size>0.22 0.01 0.10</size></box></geometry>
+          <material><diffuse>0.5 0.4 0.3 1</diffuse><ambient>0.5 0.4 0.3 1</ambient></material>
+        </visual>
+        <collision name="wall_far">
+          <pose>0 0.105 0.05 0 0 0</pose>
+          <geometry><box><size>0.22 0.01 0.10</size></box></geometry>
+        </collision>
+        <visual name="wall_far_visual">
+          <pose>0 0.105 0.05 0 0 0</pose>
+          <geometry><box><size>0.22 0.01 0.10</size></box></geometry>
+          <material><diffuse>0.5 0.4 0.3 1</diffuse><ambient>0.5 0.4 0.3 1</ambient></material>
+        </visual>
+        <collision name="wall_right">
+          <pose>-0.105 0 0.05 0 0 0</pose>
+          <geometry><box><size>0.01 0.20 0.10</size></box></geometry>
+        </collision>
+        <visual name="wall_right_visual">
+          <pose>-0.105 0 0.05 0 0 0</pose>
+          <geometry><box><size>0.01 0.20 0.10</size></box></geometry>
+          <material><diffuse>0.5 0.4 0.3 1</diffuse><ambient>0.5 0.4 0.3 1</ambient></material>
+        </visual>
+        <collision name="wall_left">
+          <pose>0.105 0 0.05 0 0 0</pose>
+          <geometry><box><size>0.01 0.20 0.10</size></box></geometry>
+        </collision>
+        <visual name="wall_left_visual">
+          <pose>0.105 0 0.05 0 0 0</pose>
+          <geometry><box><size>0.01 0.20 0.10</size></box></geometry>
+          <material><diffuse>0.5 0.4 0.3 1</diffuse><ambient>0.5 0.4 0.3 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ===== Bins: one model (models/sort_bin) used four times, placed at their centres ===== -->
+    <include>
+      <uri>model://sort_bin</uri>
+      <name>bin_1</name>
+      <pose>0.12 0.40 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://sort_bin</uri>
+      <name>bin_2</name>
+      <pose>-0.12 0.42 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://sort_bin</uri>
+      <name>bin_3</name>
+      <pose>-0.34 0.24 0 0 0 0</pose>
+    </include>
+    <include>
+      <uri>model://sort_bin</uri>
+      <name>bin_reject</name>
+      <pose>-0.38 0.06 0 0 0 0</pose>
+    </include>
+
+    <!-- ===== Camera on its pole, looking straight down at the belt upstream of the arm ===== -->
+    <model name="camera">
+      <static>true</static>
+      <link name="link">
+        <visual name="pole_visual">
+          <pose>0.70 -0.45 0.45 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.90</length></cylinder></geometry>
+          <material><diffuse>0.3 0.3 0.3 1</diffuse><ambient>0.3 0.3 0.3 1</ambient></material>
+        </visual>
+        <collision name="pole">
+          <pose>0.70 -0.45 0.45 0 0 0</pose>
+          <geometry><cylinder><radius>0.02</radius><length>0.90</length></cylinder></geometry>
+        </collision>
+        <visual name="boom">
+          <pose>0.55 -0.45 0.885 0 0 0</pose>
+          <geometry><box><size>0.32 0.03 0.03</size></box></geometry>
+          <material><diffuse>0.3 0.3 0.3 1</diffuse><ambient>0.3 0.3 0.3 1</ambient></material>
+        </visual>
+        <visual name="housing">
+          <pose>0.40 -0.45 0.875 0 0 0</pose>
+          <geometry><box><size>0.06 0.06 0.04</size></box></geometry>
+          <material><diffuse>0.1 0.1 0.1 1</diffuse><ambient>0.1 0.1 0.1 1</ambient></material>
+        </visual>
+        <!-- Looking down (pitch 90°), turned so that the image's long side runs along the belt:
+             image right = +y (the way items move), image down = +x (away from the robot).
+             640 x 480 with a 40° field of view: 0.7 mm per pixel on the item tops (z 0.24). -->
+        <sensor name="camera" type="camera">
+          <pose>0.40 -0.45 0.85 0 1.5707963 3.1415927</pose>
+          <always_on>true</always_on>
+          <update_rate>15</update_rate>
+          <topic>camera/image</topic>
+          <camera>
+            <camera_info_topic>camera/camera_info</camera_info_topic>
+            <horizontal_fov>0.6981317</horizontal_fov>
+            <image><width>640</width><height>480</height><format>R8G8B8</format></image>
+            <clip><near>0.05</near><far>3</far></clip>
+          </camera>
+        </sensor>
+      </link>
+    </model>
+
+    <!-- ===== A grey test box at the start of the belt (stage 1 only) ===== -->
+    <model name="test_box">
+      <pose>0.40 -0.65 0.2205 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.05</mass>
+          <inertia><ixx>1.33e-5</ixx><iyy>1.33e-5</iyy><izz>1.33e-5</izz></inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><box><size>0.04 0.04 0.04</size></box></geometry>
+          <surface>
+            <friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.04 0.04 0.04</size></box></geometry>
+          <material><diffuse>0.5 0.5 0.5 1</diffuse><ambient>0.5 0.5 0.5 1</ambient></material>
+        </visual>
+      </link>
+    </model>
+
+  </world>
+</sdf>
