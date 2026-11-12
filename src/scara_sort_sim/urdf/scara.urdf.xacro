@@ -172,4 +172,34 @@
     </plugin>
   </gazebo>
 
+  <!-- ===== Suction cup ===== -->
+
+  <!-- Gazebo has no suction. Instead there is one DetachableJoint plugin per item name
+       (item_00 ... item_23): told to (attach topic), it welds that item to the quill where it
+       is; told to (detach topic), it lets go. Each says "attached" or "detached" on its state
+       topic. The suction node decides when (scara_sort/suction.py).
+       Quirk: a plugin welds its item as soon as that name first appears in the world, so the
+       suction node warms all of them up at startup. -->
+  <xacro:property name="suction_slots" value="24"/>  <!-- = POOL in scara_sort/item_spawner.py -->
+
+  <xacro:macro name="suction_slot" params="n">
+    <xacro:if value="${n > 0}">
+      <xacro:property name="item" value="${'item_%02d' % (n - 1)}"/>
+      <gazebo>
+        <plugin filename="gz-sim-detachable-joint-system" name="gz::sim::systems::DetachableJoint">
+          <parent_link>quill</parent_link>
+          <child_model>${item}</child_model>
+          <child_link>link</child_link>
+          <attach_topic>/scara/suction/${item}/attach</attach_topic>
+          <detach_topic>/scara/suction/${item}/detach</detach_topic>
+          <output_topic>/scara/suction/${item}/state</output_topic>
+          <suppress_child_warning>true</suppress_child_warning>
+        </plugin>
+      </gazebo>
+      <xacro:suction_slot n="${n - 1}"/>
+    </xacro:if>
+  </xacro:macro>
+
+  <xacro:suction_slot n="${suction_slots}"/>
+
 </robot>

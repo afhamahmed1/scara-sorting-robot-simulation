@@ -4,11 +4,12 @@ A SCARA robot arm with a suction cup sorts items coming down a conveyor belt, si
 Gazebo. The full design is in [PLAN.md](PLAN.md). It builds on the SCARA Driller: same arm,
 same kinematics, same joint motors.
 
-**Stages 1 to 3 of 6 are done:** the cell (the arm with its suction cup, no suction yet,
-the conveyor belt with its encoder, four bins, the catch box, the camera on its pole) with
-`move_to` to put the cup anywhere; the item spawner, which sends a seeded stream of coloured
-cubes, cylinders and prisms down the belt; and the item detector, which names each item from
-the camera image and tracks it along the belt with the encoder.
+**Stages 1 to 4 of 6 are done:** the cell (the arm with its suction cup, the conveyor belt
+with its encoder, four bins, the catch box, the camera on its pole) with `move_to` to put the
+cup anywhere; the item spawner, which sends a seeded stream of coloured cubes, cylinders and
+prisms down the belt; the item detector, which names each item from the camera image and
+tracks it along the belt with the encoder; and the suction cup, with `pick_place` to move one
+item from the belt into a bin.
 
 ## 1. Build
 
@@ -103,9 +104,11 @@ ros2 run scara_sort move_to 600 0 50   # Refused: 600 mm from the base, but the 
 
 ## 5. Items on the belt
 
-With the simulation running, start the spawner and the belt (two more terminals):
+With the simulation running, start the suction node (it must warm up the suction cup before
+any item appears, see section 7), the spawner and the belt (three more terminals):
 
 ```bash
+ros2 run scara_sort suction
 ros2 run scara_sort item_spawner
 ros2 topic pub --once /conveyor/cmd_vel std_msgs/msg/Float64 "{data: 0.05}"
 ```
@@ -136,8 +139,8 @@ triangular prism with 40 mm sides, in red, green, blue or yellow. The prism's co
 is three boxes that fill its triangle (it still looks exact): Gazebo would make a triangle
 mesh of it, and a pile of meshes in a bin slows the simulation down several times.
 
-Item names come from a pool, `item_00` … `item_23`, because the suction cup will need every
-name in advance (stage 4). Before a name is used again, the oldest item, which had it, is
+Item names come from a pool, `item_00` … `item_23`, because the suction cup needs every name
+in advance (section 7). Before a name is used again, the oldest item, which had it, is
 removed, so each bin keeps its most recent items.
 
 The truth about each item, for the referee and checks only, comes on two topics:
@@ -214,16 +217,81 @@ encoder about 5 s after the camera last saw it. For the seeded 30-item run (seed
 [vision_check]: 30 items: 30 named right, 0 wrong; worst error 0.9 mm under the camera, 0.7 mm at the pick line
 ```
 
-## 7. Unit tests
+## 7. The suction cup
+
+Gazebo has no suction, so it is faked in a way that behaves like the real thing as far as
+the sorter can tell. Start the suction node right after the simulation:
+
+```bash
+ros2 run scara_sort suction
+```
+
+```
+[suction]: Warm-up: spawning 24 dummy items so each suction slot welds once...
+[suction]: Warm-up done: all 24 slots welded and released once
+[suction]: Suction ready: /suction
+```
+
+The URDF has one Gazebo `DetachableJoint` plugin per item name (`item_00` … `item_23`, made by
+an xacro loop). Told to, a plugin welds its item to the quill where it is, and lets go again.
+The suction node offers the `/suction` service (std_srvs/SetBool):
+
+- **on:** it looks up which item is right under the cup (its centre within 15 mm of the cup's
+  axis, its top 0 to 5 mm below the cup), using the true positions from Gazebo, and welds it.
+  With nothing there it answers `success: false, "nothing under the cup"`, like a vacuum
+  sensor that never builds up pressure.
+- **off:** it releases the item, which drops.
+
+Each plugin welds its item the moment that name *first* appears in the world. So at startup
+the suction node spawns all 24 names as invisible, weightless dummies off to the side, lets
+each plugin weld and release its dummy once, and removes them. Only then does `/suction`
+appear, and the spawner waits for it. (Restarted while the simulation keeps running, it finds
+the slots already warmed up.)
+
+Try it over the empty belt, with the cup 2 mm above where an item's top would be:
+
+```bash
+ros2 run scara_sort move_to 400 0 42
+ros2 service call /suction std_srvs/srv/SetBool "{data: true}"
+# std_srvs.srv.SetBool_Response(success=False, message='nothing under the cup')
+```
+
+## 8. Pick and place one item
+
+Put an item on the stopped belt at the pick line, then move it into a bin:
+
+```bash
+ros2 run scara_sort put_item green prism 400 0     # item_00: green prism at (400, 0) mm
+ros2 run scara_sort pick_place 400 0 1
+```
+
+```
+Picking at (400, 0) mm → bin 1
+Gripped item_00
+Placed in bin 1 (4.1 s)
+```
+
+X and Y in mm, the bin is `1`, `2`, `3` or `reject`. The arm goes to the ready pose (above
+the pick line, 60 mm over the item tops), moves above the item, lowers the cup to 2 mm over
+its top, switches the suction on, lifts fully (a carried item then hangs 48 mm above the items
+on the belt and 58 mm above the bin walls), moves over the bin, lowers until the item is 10 mm
+above the walls, switches the suction off and goes back to the ready pose. The time is in
+simulated seconds. With nothing there it says `Missed: nothing under the cup`. Ctrl-C
+switches the suction off.
+
+Tested 10 times for each shape, each item put down at a random angle: all 30 landed in bin 1,
+and while carried the item stayed exactly where it was welded under the cup.
+
+## 9. Unit tests
 
 The kinematics, the cell layout, the items, the vision (on synthetic images drawn with
-OpenCV) and the tracker are tested without Gazebo:
+OpenCV), the tracker and the suction's grip check are tested without Gazebo:
 
 ```bash
 colcon test --packages-select scara_sort --event-handlers console_direct+
 ```
 
-It should end with `82 passed`. `test_cell.py` checks that every bin centre and corner and the
+It should end with `90 passed`. `test_cell.py` checks that every bin centre and corner and the
 whole pick zone are reachable. The hardest point is the reject bin's far corner, at
 (−0.44, 0.00) m: the shoulder turns 147° there, inside its ±150° range.
 
@@ -231,7 +299,7 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 
 | File | What it does |
 |---|---|
-| `src/scara_sort_sim/urdf/scara.urdf.xacro` | The arm: column, two links, quill with vacuum tube and suction cup, `cup_tip` frame, joint motors |
+| `src/scara_sort_sim/urdf/scara.urdf.xacro` | The arm: column, two links, quill with vacuum tube and suction cup, `cup_tip` frame, joint motors, 24 suction slots |
 | `src/scara_sort_sim/worlds/sort_cell.sdf` | The cell: belt (with `TrackController`), frame and rails, bins, catch box, camera on its pole |
 | `src/scara_sort_sim/models/sort_bin/` | One bin, used four times by the world |
 | `src/scara_sort_sim/config/bridge.yaml` | Topics and services copied between Gazebo and ROS 2 |
@@ -249,6 +317,10 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 | `src/scara_sort/scara_sort/tracker.py` | Follows the items from frame to frame and predicts where they are from the encoder |
 | `src/scara_sort/scara_sort/item_detector.py` | `item_detector` node: camera + encoder → `/items` and `/camera/detections` |
 | `src/scara_sort/scara_sort/vision_check.py` | `vision_check` node: compares `/items` with the truth |
+| `src/scara_sort/scara_sort/grip.py` | Which item is right under the cup (the suction's stand-in for a vacuum sensor) |
+| `src/scara_sort/scara_sort/suction.py` | `suction` node: warm-up, then `/suction` on/off with the DetachableJoint plugins |
+| `src/scara_sort/scara_sort/pick_place.py` | `pick_place` node, and the `Arm` class with the pick and place moves |
+| `src/scara_sort/scara_sort/put_item.py` | `put_item` node: puts one item on the belt, for trying things by hand |
 | `src/scara_sort/config/items.yaml` | Item settings: colours, shapes, spacing, count, seed |
 | `src/scara_sort/config/colours.yaml` | HSV ranges of the colours |
 | `src/scara_sort/test/` | Unit tests |
@@ -261,6 +333,6 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 | 1 cell | The arm with the cup, belt, bins, catch box, camera, `move_to` | done |
 | 2 items | `item_spawner`: 30 mixed items ride down the belt | done |
 | 3 vision | Camera → item colour, shape and position; tracking with the belt encoder | done |
-| 4 suction | Suction cup, `pick_place` | |
+| 4 suction | Suction cup, `pick_place` | done |
 | 5 sort | Stop-and-go sorter, referee | |
 | 6 on the move | Picking from the running belt | |

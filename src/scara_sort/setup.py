@@ -26,6 +26,9 @@ setup(
             'item_spawner = scara_sort.item_spawner:main',
             'item_detector = scara_sort.item_detector:main',
             'vision_check = scara_sort.vision_check:main',
+            'suction = scara_sort.suction:main',
+            'pick_place = scara_sort.pick_place:main',
+            'put_item = scara_sort.put_item:main',
         ],
     },
 )

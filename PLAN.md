@@ -190,8 +190,14 @@ as the sorter can tell.
 - **Quirk** (checked in the Harmonic source): each plugin welds its item as soon as that
   name *first* appears in the world (`attachRequested` starts as true). So at startup the
   suction node **warms up** every slot. With the arm standing still, it spawns all 24 names
-  off to the side, releases them, and removes them. After that, a reused name is never welded
-  unless the node asks for it.
+  off to the side (invisible, weightless dummies), releases them, and removes them. After
+  that, a reused name is never welded unless the node asks for it. The `/suction` service only
+  appears once the warm-up is done, and the spawner waits for it.
+- A request to weld a name that isn't in the world stays pending in its plugin until the name
+  appears. So the suction node releases at once any weld it didn't just ask for.
+- The suction node talks to the plugins' topics with Gazebo's own Python bindings
+  (`/scara/suction/item_07/attach`, `.../detach`, `.../state`), so they need no bridge entries.
+- `put_item COLOUR SHAPE X Y` puts one item on the belt by hand, for trying `pick_place`.
 - The spawner removes the oldest item before reusing its name, so each bin keeps its most
   recent items. It does so right after spawning the item before, so the old model is surely
   gone when the name is used again (Gazebo removes models at the end of a step).

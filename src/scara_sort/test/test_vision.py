@@ -42,7 +42,6 @@ def belt_image():
 def outline(shape, x, y, yaw):
     """Pixel outline of an item's top face centred at (x, y) m, turned by yaw."""
     if shape == 'cube':
-        corners = [(0.02 * cos(yaw + a), 0.02 * sin(yaw + a)) for a in (0, pi / 2, pi, 3 * pi / 2)]
         corners = [(0.02 * 2 ** 0.5 * cos(yaw + pi / 4 + k * pi / 2),
                     0.02 * 2 ** 0.5 * sin(yaw + pi / 4 + k * pi / 2)) for k in range(4)]
     elif shape == 'prism':
@@ -125,7 +124,6 @@ def test_several_items_at_once():
 
 def test_item_cut_by_the_image_edge_is_left_until_fully_in_view():
     image = belt_image()
-    u_left, _ = CAMERA.to_pixel(0.40, -0.67)
     y_edge = -0.45 + (0 - 320) * 0.61 / 879.19   # the left image edge on the belt
     draw_item(image, 'red', 'cube', 0.40, y_edge + 0.01)   # half in view
     assert detect(image, RANGES, CAMERA) == []

@@ -10,11 +10,13 @@ The calls wait for the answer, so make them from a node's main loop, not from in
 its callbacks.
 """
 
+import time
 from math import cos, sin
 
 import rclpy
 from ros_gz_interfaces.msg import Entity
 from ros_gz_interfaces.srv import DeleteEntity, SpawnEntity
+from tf2_msgs.msg import TFMessage
 
 WORLD = 'sort_cell'  # world name in scara_sort_sim/worlds/sort_cell.sdf
 
@@ -50,6 +52,21 @@ class GzWorld:
         pose.position.x, pose.position.y, pose.position.z = x, y, z
         pose.orientation.z, pose.orientation.w = sin(yaw / 2), cos(yaw / 2)
         return self.call(self.create_client, request)
+
+    def items_present(self, timeout=3.0):
+        """Names of the items (item_..) in the world now, from /gz/poses. None if it is silent.
+
+        A simulation-side helper: the spawner and the suction node clear an earlier run's
+        items with it. (The detector and the sorter must not use /gz/poses.)
+        """
+        names = []
+        sub = self.node.create_subscription(
+            TFMessage, '/gz/poses', lambda msg: names.append([t.child_frame_id for t in msg.transforms]), 10)
+        end = time.time() + timeout
+        while not names and time.time() < end:
+            rclpy.spin_once(self.node, timeout_sec=0.1)
+        self.node.destroy_subscription(sub)
+        return names[0] if names else None
 
     def remove(self, name):
         """Remove a model by name. It is gone after Gazebo's next step.

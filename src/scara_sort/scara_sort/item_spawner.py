@@ -8,6 +8,9 @@ stops, new items stop arriving too. Each item appears at (0.40 ± 0.03, -0.65) m
 random angle. The settings are in config/items.yaml; count, seed, spacing (mm) and lateral (mm)
 can also be given with -p, and items:=<file> reads another settings file.
 
+It first waits for the suction node (ros2 run scara_sort suction), which must warm up the
+suction cup before any item appears.
+
 Item names come from a pool, item_00 ... item_23 (the suction cup needs every name in advance).
 Before a name is used again, the oldest item, which had it, is removed from Gazebo: right
 after an item is spawned, so that it is surely gone by the time the next one appears.
@@ -24,6 +27,7 @@ from nav_msgs.msg import Odometry
 from rclpy.executors import ExternalShutdownException
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile
+from std_srvs.srv import SetBool
 
 from scara_sort.cell import BELT_TOP, SPAWN
 from scara_sort.config import load_yaml
@@ -67,6 +71,13 @@ class ItemSpawner(Node):
         if not self.gz.wait():
             self.get_logger().error('No /world/sort_cell/create service: is the simulation running?')
             return
+        # Each suction slot welds its item the moment that name first appears, unless the
+        # suction node has warmed it up: wait for the suction node (it offers /suction once done)
+        suction = self.create_client(SetBool, '/suction')
+        if not suction.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('Waiting for the suction node to warm up its slots...')
+            while rclpy.ok() and not suction.wait_for_service(timeout_sec=1.0):
+                pass
         self.remove_old_items()
         count = self.settings['count'] or 'endless'
         self.get_logger().info(
@@ -86,11 +97,14 @@ class ItemSpawner(Node):
 
     def remove_old_items(self):
         """Remove the items of an earlier run from Gazebo, if there are any."""
-        for k in range(POOL):
-            self.gz.remove(pool_name(k + 1))
-        end = time.time() + 1.0   # let Gazebo take them away before the names are used again
-        while time.time() < end:
-            rclpy.spin_once(self, timeout_sec=0.1)
+        old = self.gz.items_present() or []
+        for name in old:
+            self.gz.remove(name)
+        if old:
+            self.get_logger().info(f'Removed {len(old)} items of an earlier run')
+            end = time.time() + 1.0   # let Gazebo take them away before the names are used again
+            while time.time() < end:
+                rclpy.spin_once(self, timeout_sec=0.1)
 
     def spawn(self, item):
         number, name = item['number'], pool_name(item['number'])
