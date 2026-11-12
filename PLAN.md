@@ -55,8 +55,8 @@ in `move_to` now means the height above the belt.
 ```
              y ▲ (robot's left)
                │                                   ┌────────┐ catch box (on the floor)
-    bin 2      │   bin 1                           │        │ y 0.72 – 0.92
- (-0.12,0.42)  │ (0.12,0.40)                       ╞════════╡ y +0.70  belt end
+    bin 2      │   bin 1                           │        │ y 0.64 – 0.92, reaching
+ (-0.12,0.42)  │ (0.12,0.40)                       ╞════════╡ y +0.70  under the belt end
                │                                   ║        ║
  bin 3         │                                   ║   ▲    ║ items move +y, 50 mm/s
  (-0.34,0.24)  │                                   ║   │    ║
@@ -80,7 +80,7 @@ in `move_to` now means the height above the belt.
 | Camera | above (0.40, −0.45), z 0.85, looking straight down; on a pole at (0.70, −0.45), clear of the arm | 640 × 480, 40° field of view → sees y −0.67 – −0.23, about 0.7 mm per pixel |
 | Pick zone | y −0.15 – +0.15 across the belt; the pick line is at y = 0 | |
 | Bins 1, 2, 3, reject | centres in the drawing | 0.12 × 0.12 m inside, floor at z 0.15, walls up to z 0.23 |
-| Catch box | x 0.30 – 0.50, y 0.72 – 0.92, on the floor | catches items nobody picked |
+| Catch box | x 0.30 – 0.50, y 0.64 – 0.92, on the floor, its near wall under the end of the belt | catches items nobody picked; items falling off the end can't land or roll in front of it |
 
 These numbers have been checked against the arm's kinematics. Every bin centre and corner and
 the whole pick zone are reachable, and the largest shoulder angle needed is 147°, at the
@@ -98,6 +98,7 @@ always travels with the cup fully up.
 | Shapes | cube 40 mm · cylinder Ø40 × 40 mm (standing up) · triangular prism (40 mm sides, 40 mm tall) |
 | Colours | red, green, blue, yellow: strong matt colours that are easy to tell apart on a dark belt |
 | Mass | 50 g, high friction so they don't slide on the belt |
+| Collision | the prism's is three boxes filling its triangle (it still looks exact): Gazebo makes a triangle mesh of a prism, and piles of meshes in a bin slow the simulation down several times |
 
 All items are 40 mm tall. Their top faces therefore all lie in one plane, which makes
 turning a pixel into a position simple (see Vision).
@@ -115,6 +116,11 @@ seed: 1           # same seed → same items in the same order
 
 Items are spawned by **belt travel, read from the belt encoder, not by time**. When the belt
 stops for a pick, new items stop arriving too and never pile up at the start.
+
+The spawner adds and removes models through Gazebo's `create` and `remove` services, bridged
+to ROS 2 by `ros_gz_bridge` (`ros_gz_interfaces/srv/SpawnEntity`, `DeleteEntity`). The
+position goes in the request, not the SDF: the bridged request always carries a pose, and
+Gazebo then ignores the SDF's.
 
 ## The belt
 
@@ -184,7 +190,8 @@ as the sorter can tell.
   off to the side, releases them, and removes them. After that, a reused name is never welded
   unless the node asks for it.
 - The spawner removes the oldest item before reusing its name, so each bin keeps its most
-  recent items.
+  recent items. It does so right after spawning the item before, so the old model is surely
+  gone when the name is used again (Gazebo removes models at the end of a step).
 
 ## Sort rules
 
@@ -233,7 +240,8 @@ Ctrl-C stops the belt and releases the suction.
 ## Measuring the result
 
 **Ground-truth rule:** the true positions from Gazebo (`/world/sort_cell/dynamic_pose/info`,
-bridged as `/gz/poses`) may be used only by the "simulated hardware" and the checkers. That
+copied to `/gz/poses` by the `gz_poses` node, because `ros_gz_bridge` drops the model names)
+may be used only by the "simulated hardware" and the checkers. That
 means the suction node, the referee and `vision_check`. The detector and the sorter work
 only from the camera and the encoder, exactly as they would on a real belt.
 
@@ -261,7 +269,8 @@ only from the camera and the encoder, exactly as they would on a real belt.
 | `/scara/j1_cmd` … `j3_cmd`, `/joint_states` | as in the driller | sorter ↔ motors |
 | `/suction` | std_srvs/SetBool (service) | sorter → suction node |
 | `/items/spawned` | scara_sort_msgs/SpawnedItem | spawner → referee (the truth) |
-| `/gz/poses` | tf2_msgs/TFMessage | Gazebo → suction node, referee, vision_check |
+| `/gz/poses` | tf2_msgs/TFMessage | `gz_poses` → suction node, referee, vision_check |
+| `/world/sort_cell/create`, `/remove` | ros_gz_interfaces SpawnEntity, DeleteEntity (services, bridged) | spawner, suction node → Gazebo |
 | `/sort_markers` | visualization_msgs/MarkerArray | sorter → RViz: items labelled with their bin, pick zone, bins |
 
 ```
@@ -278,6 +287,7 @@ std_msgs/Header header
 Item[] items
 
 # SpawnedItem.msg
+uint32 number       # 1 for the first item of the run, then 2, 3, ...
 string name         # Gazebo model name, e.g. item_07
 string colour
 string shape
@@ -291,7 +301,7 @@ and PLAN at the top, packages in `src/`.
 | Package | Contents |
 |---|---|
 | `scara_sort_msgs` | `Item`, `ItemArray`, `SpawnedItem` messages |
-| `scara_sort_sim` | URDF (arm, cup, suction slots), world `sort_cell.sdf` (belt, bins, catch box, camera), bridge config, `sim.launch.py`, RViz layout |
+| `scara_sort_sim` | URDF (arm, cup, suction slots), world `sort_cell.sdf` (belt, bins, catch box, camera), bridge config, `gz_poses` node, `sim.launch.py`, RViz layout |
 | `scara_sort` | plain Python: `kinematics.py`, `vision.py`, `tracker.py`, `rules.py`, `intercept.py` (all unit-tested). Nodes: `move_to`, `item_spawner`, `item_detector`, `suction`, `pick_place`, `sorter`, `referee`, `vision_check`. Plus `config/*.yaml`, `launch/sort.launch.py` and tests |
 
 The sim package is named `scara_sort_sim`, not `scara_sim`, so it can't clash with the driller's

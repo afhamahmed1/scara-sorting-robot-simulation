@@ -1,0 +1,7 @@
+# Items the spawner puts on the belt
+colours: [red, green, blue, yellow]
+shapes: [cube, cylinder, prism]
+spacing: 250      # mm of belt travel between items (± 50 mm random)
+lateral: 30       # mm, random offset from the belt centre
+count: 30         # items per run, 0 = keep going
+seed: 1           # same seed → same items in the same order

@@ -33,5 +33,5 @@ BIN_INSIDE = 0.12
 BIN_FLOOR = 0.15
 BIN_WALL_TOP = 0.23
 
-CATCH_BOX_X = (0.30, 0.50)      # on the floor past the end of the belt
-CATCH_BOX_Y = (0.72, 0.92)
+CATCH_BOX_X = (0.30, 0.50)      # on the floor at the end of the belt, reaching under it
+CATCH_BOX_Y = (0.64, 0.92)

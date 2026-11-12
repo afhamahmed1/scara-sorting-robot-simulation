@@ -43,3 +43,15 @@
   ros_type_name: "nav_msgs/msg/Odometry"
   gz_type_name: "gz.msgs.Odometry"
   direction: GZ_TO_ROS
+
+# Gazebo's services to add and remove models, callable from ROS 2
+- service_name: "/world/sort_cell/create"
+  ros_type_name: "ros_gz_interfaces/srv/SpawnEntity"
+  gz_req_type_name: "gz.msgs.EntityFactory"
+  gz_rep_type_name: "gz.msgs.Boolean"
+
+- service_name: "/world/sort_cell/remove"
+  ros_type_name: "ros_gz_interfaces/srv/DeleteEntity"
+  gz_req_type_name: "gz.msgs.Entity"
+  gz_rep_type_name: "gz.msgs.Boolean"
+

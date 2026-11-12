@@ -76,7 +76,14 @@ def generate_launch_description():
             parameters=[{'config_file': bridge_config, 'use_sim_time': True}],
         ),
 
-        # 5. RViz to see the arm and its frames
+        # 5. The items' true positions, with their names, on /gz/poses
+        Node(
+            package='scara_sort_sim',
+            executable='gz_poses.py',
+            parameters=[{'use_sim_time': True}],
+        ),
+
+        # 6. RViz to see the arm and its frames
         Node(
             package='rviz2',
             executable='rviz2',
