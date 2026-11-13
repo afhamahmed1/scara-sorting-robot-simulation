@@ -3,6 +3,7 @@
     ros2 launch scara_sort sort.launch.py
     ros2 launch scara_sort sort.launch.py rules:=config/sort_by_shape.yaml
     ros2 launch scara_sort sort.launch.py count:=10 seed:=2 gui:=false
+    ros2 launch scara_sort sort.launch.py mode:=move speed:=0.10      # picking on the move
 
 The suction node warms up its slots first; the spawner and the sorter wait for it.
 """
@@ -31,6 +32,8 @@ def generate_launch_description():
         DeclareLaunchArgument('count', default_value='30', description='Items in the run, 0 = endless'),
         DeclareLaunchArgument('seed', default_value='1', description='Same seed, same items'),
         DeclareLaunchArgument('speed', default_value='0.05', description='Belt speed, m/s'),
+        DeclareLaunchArgument('mode', default_value='stop',
+                              description='stop = stop the belt for each pick, move = never stop it'),
         DeclareLaunchArgument('gui', default_value='true', description='Open the Gazebo window'),
         DeclareLaunchArgument('rviz', default_value='true', description='Open RViz'),
 
@@ -42,6 +45,6 @@ def generate_launch_description():
         node('suction'),
         node('item_spawner', {'count': count, 'seed': seed}),
         node('item_detector'),
-        node('sorter', {'rules': rules, 'speed': speed}),
+        node('sorter', {'rules': rules, 'speed': speed, 'mode': LaunchConfiguration('mode')}),
         node('referee', {'rules': rules, 'count': count}),
     ])

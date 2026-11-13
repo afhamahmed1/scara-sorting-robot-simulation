@@ -25,6 +25,7 @@ from rclpy.utilities import remove_ros_args
 from std_srvs.srv import SetBool
 
 from scara_sort.cell import BELT_TOP, BIN_WALL_TOP, BINS, ITEM_SIZE, PICK_LINE
+from scara_sort.intercept import J3_SPEED
 from scara_sort.kinematics import TIP_TOP, ik
 from scara_sort.move_to import MoveTo
 
@@ -81,8 +82,13 @@ class Arm(MoveTo):
         x, y = BINS[bin_name]
         self.tip_to(x, y, TRAVEL_HEIGHT)
         # Going down, the item may come to sit on the heap in the bin before it gets there
-        # (the bins are small): then the arm stops, and it is let go right there
-        self.move(ik(x, y, PLACE_HEIGHT), stall=0.2)
+        # (the bins are small). So the quill gets the time the way down takes, plus a little,
+        # and the item is let go where it is then.
+        target = ik(x, y, PLACE_HEIGHT)
+        self.send(target)
+        end = self.seconds() + abs(target[2] - self.joints['j3']) / J3_SPEED + 0.15
+        while not self.arrived(target) and self.seconds() < end:
+            rclpy.spin_once(self, timeout_sec=0.01)
         _, message = self.suction(False)
         return message
 

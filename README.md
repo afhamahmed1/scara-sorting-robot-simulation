@@ -4,12 +4,13 @@ A SCARA robot arm with a suction cup sorts items coming down a conveyor belt, si
 Gazebo. The full design is in [PLAN.md](PLAN.md). It builds on the SCARA Driller: same arm,
 same kinematics, same joint motors.
 
-**Stages 1 to 5 of 6 are done:** the cell (the arm with its suction cup, the conveyor belt
-with its encoder, four bins, the catch box, the camera on its pole); the item spawner, which
-sends a seeded stream of coloured cubes, cylinders and prisms down the belt; the item
-detector, which names each item from the camera image and tracks it along the belt with the
-encoder; the suction cup; and the sorter, which stops the belt for each item and puts it in
-its bin, with a referee that scores every item from Gazebo's true positions.
+**All six stages are done.** The cell (the arm with its suction cup, the conveyor belt with
+its encoder, four bins, the catch box, the camera on its pole); the item spawner, which sends
+a seeded stream of coloured cubes, cylinders and prisms down the belt; the item detector,
+which names each item from the camera image and tracks it along the belt with the encoder;
+the suction cup; the sorter, which puts each item into its bin, either stopping the belt for
+each pick or picking from the running belt; and a referee that scores every item from
+Gazebo's true positions.
 
 Quick start, everything at once (after building, section 1):
 
@@ -18,7 +19,17 @@ ros2 launch scara_sort sort.launch.py
 ```
 
 ```
-[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 8.3 items/min
+[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 8.4 items/min
+```
+
+and picking from the running belt:
+
+```bash
+ros2 launch scara_sort sort.launch.py mode:=move
+```
+
+```
+[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 11.3 items/min
 ```
 
 ## 1. Build
@@ -305,16 +316,16 @@ The suction node warms up first; the spawner and the sorter wait for it. Then:
 
 ```
 [sorter]: Sorting by config/sort_by_colour.yaml, stop-and-go, belt at 50 mm/s
-[sorter]: #1 green prism → bin 2 (4.5 s)
+[sorter]: #1 green prism → bin 2 (4.4 s)
 [referee]: #1 item_00 green prism: bin 2 ✓
-[sorter]: #2 yellow cylinder → bin reject (3.2 s)
+[sorter]: #2 yellow cylinder → bin reject (3.1 s)
 [referee]: #2 item_01 yellow cylinder: bin reject ✓
-[sorter]: #3 yellow cube → bin reject (3.3 s)
+[sorter]: #3 yellow cube → bin reject (3.1 s)
 [referee]: #3 item_02 yellow cube: bin reject ✓
 ...
-[sorter]: #30 blue cylinder → bin 3 (3.4 s)
+[sorter]: #30 blue cylinder → bin 3 (3.5 s)
 [referee]: #30 item_05 blue cylinder: bin 3 ✓
-[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 8.3 items/min
+[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 8.4 items/min
 ```
 
 The sort cycle, for each item:
@@ -327,8 +338,8 @@ The sort cycle, for each item:
 4. Lift fully, which restarts the belt (the arm is now clear of it), move over the item's
    bin, lower until the item is 10 mm over the walls, suction off, back to the ready pose.
    (The bins are small: once a few items lie in one, the heap can stand higher than the
-   walls. Then the item comes to rest on the heap on the way down, the arm stops there, and
-   the item is let go right there.)
+   walls, and the item comes to rest on it on the way down. So the quill gets the time the
+   way down takes, plus 0.15 s, and the item is let go wherever it is then.)
 5. Log `#7 red cube → bin 1 (3.4 s)`: simulated seconds from the belt stopping to letting go.
 
 The sorter works only from `/items` (the camera) and the belt's encoder. The referee alone
@@ -357,7 +368,8 @@ ros2 launch scara_sort sort.launch.py rules:=config/sort_by_shape.yaml
 ```
 
 Rules can mix colour and shape too, e.g. `{colour: red, shape: cube, bin: 1}`. Other launch
-arguments: `count:=10`, `seed:=2`, `speed:=0.05` (m/s), `gui:=false`, `rviz:=false`.
+arguments: `mode:=move` (section 10), `count:=10`, `seed:=2`, `speed:=0.05` (m/s),
+`gui:=false`, `rviz:=false`.
 
 In RViz, **Sorting** shows the pick zone on the belt (blue, with the pick line), the bins, and
 every item the camera has seen, in its colour, labelled with the bin it goes to (`#7 → 1`).
@@ -366,16 +378,79 @@ The nodes can also be started one by one, each in its own terminal, after `sim.l
 `suction`, `item_spawner`, `item_detector`, `sorter`, `referee` (the last two with
 `--ros-args -p rules:=config/sort_by_shape.yaml` for shapes).
 
-## 10. Unit tests
+## 10. Sorting on the move
+
+```bash
+ros2 launch scara_sort sort.launch.py mode:=move
+```
+
+The belt never stops. For each item:
+
+- **Intercept** (`intercept.py`): each joint motor runs at its top speed until it is there, so
+  a move takes as long as its slowest joint (|Δj1|/2, |Δj2|/2 rad/s, |Δj3|/0.2 m/s). Along the
+  item's path, the sorter takes the first point in the pick zone where the arm, setting off
+  now, gets there first (with a 0.25 s margin), leaving room in the zone for the 0.6 s it
+  then rides along. The arm goes there, 20 mm over the item tops, and waits.
+- **Follow**: every 20 ms it sends the arm to where the item is now (aimed 30 ms ahead, for
+  the arm's lag), while lowering the cup to 2 mm over the item, switching the suction on once
+  the cup is over it, and lifting until the item is 30 mm over the belt. Then the arm swings
+  over to the bin, the cup rising fully on the way, places the item as before and goes
+  straight on to the next one.
+- **Skip**: if the arm can't catch an item before it leaves the pick zone, it logs
+  `missed #9 (arm busy)` and lets it ride into the catch box. A skipped item never goes into a
+  wrong bin.
+
+```
+[sorter]: Sorting by config/sort_by_colour.yaml, on the move, belt at 50 mm/s
+[sorter]: #1 green prism → bin 2 (13.2 s; met at y -150 mm, 1.4 mm off the cup's axis)
+[referee]: #1 item_00 green prism: bin 2 ✓
+[sorter]: #2 yellow cylinder → bin reject (4.1 s; met at y -150 mm, 0.3 mm off the cup's axis)
+[referee]: #2 item_01 yellow cylinder: bin reject ✓
+...
+[sorter]: #30 blue cylinder → bin 3 (4.6 s; met at y -132 mm, 0.5 mm off the cup's axis)
+[referee]: #30 item_05 blue cylinder: bin 3 ✓
+[referee]: 30 items: 30 correct, 0 wrong bin, 0 missed, 0 dropped — 11.3 items/min
+```
+
+11.3 items/min against 8.4 stop-and-go: the belt keeps going, so items arrive at its full
+rate (one per 250 mm, every 5 s at 50 mm/s), and the arm keeps up. The time is now from
+choosing the item to letting go, including the wait for it to arrive (13.2 s for the first
+item, which the arm meets as soon as it enters the pick zone, at y = −150 mm). "Off the cup's
+axis" is how far the item's true centre was from the cup when it was gripped, measured by the
+suction node: how well the cup keeps up with a moving item. At 50 mm/s it stays within
+1.5 mm.
+
+At 100 mm/s, items come every 2.5 s, faster than the arm can sort them:
+
+```bash
+ros2 launch scara_sort sort.launch.py mode:=move speed:=0.10
+```
+
+```
+[sorter]: #2 yellow cylinder → bin reject (3.6 s; met at y 56 mm, 0.7 mm off the cup's axis)
+[sorter]: missed #3 (arm busy): at y 78 mm the arm can no longer catch it, it rides on into the catch box
+[referee]: #3 item_02 yellow cube: the catch box ✗ missed
+...
+[referee]: 30 items: 20 correct, 0 wrong bin, 10 missed, 0 dropped — 13.2 items/min
+```
+
+Every item the arm can't reach in time is skipped and lands in the catch box; none goes into a
+wrong bin. At this speed grips were mostly within 5 mm of the cup's axis, but one was 13.3 mm
+off (the cup accepts 15 mm), even though the detector's prediction is just as good at
+100 mm/s (worst error 1.7 mm, checked with `vision_check`). So the cup itself fell behind
+for a moment there; that is not explained yet.
+
+## 11. Unit tests
 
 The kinematics, the cell layout, the items, the vision (on synthetic images drawn with
-OpenCV), the tracker, the suction's grip check and the sort rules are tested without Gazebo:
+OpenCV), the tracker, the suction's grip check, the sort rules and the intercept are tested
+without Gazebo:
 
 ```bash
 colcon test --packages-select scara_sort --event-handlers console_direct+
 ```
 
-It should end with `105 passed`. `test_cell.py` checks that every bin centre and corner and the
+It should end with `112 passed`. `test_cell.py` checks that every bin centre and corner and the
 whole pick zone are reachable. The hardest point is the reject bin's far corner, at
 (−0.44, 0.00) m: the shoulder turns 147° there, inside its ±150° range.
 
@@ -406,7 +481,8 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 | `src/scara_sort/scara_sort/pick_place.py` | `pick_place` node, and the `Arm` class with the pick and place moves |
 | `src/scara_sort/scara_sort/put_item.py` | `put_item` node: puts one item on the belt, for trying things by hand |
 | `src/scara_sort/scara_sort/rules.py` | Sort rules: which bin each kind of item goes into |
-| `src/scara_sort/scara_sort/sorter.py` | `sorter` node: the sort cycle, belt control, RViz markers |
+| `src/scara_sort/scara_sort/sorter.py` | `sorter` node: stop-and-go or on the move, belt control, RViz markers |
+| `src/scara_sort/scara_sort/intercept.py` | Where the arm can meet a moving item: move times, meeting point |
 | `src/scara_sort/scara_sort/referee.py` | `referee` node: scores where each item really ended up |
 | `src/scara_sort/launch/sort.launch.py` | Starts everything: simulation, suction, spawner, detector, sorter, referee |
 | `src/scara_sort/config/sort_by_colour.yaml`, `sort_by_shape.yaml` | Rules files |
@@ -424,4 +500,4 @@ whole pick zone are reachable. The hardest point is the reject bin's far corner,
 | 3 vision | Camera → item colour, shape and position; tracking with the belt encoder | done |
 | 4 suction | Suction cup, `pick_place` | done |
 | 5 sort | Stop-and-go sorter, referee | done |
-| 6 on the move | Picking from the running belt | |
+| 6 on the move | Picking from the running belt | done |

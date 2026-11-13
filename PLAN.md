@@ -197,6 +197,12 @@ as the sorter can tell.
   appears. So the suction node releases at once any weld it didn't just ask for.
 - The suction node talks to the plugins' topics with Gazebo's own Python bindings
   (`/scara/suction/item_07/attach`, `.../detach`, `.../state`), so they need no bridge entries.
+  It reads the joint states and the items' true poses the same way, on Gazebo's threads, so
+  they keep coming in while a `/suction` call waits; ROS 2 only serves the call (a
+  multi-threaded ROS executor would keep a CPU core busy).
+- Before the warm-up it waits until every slot's plugin is in Gazebo and connected (the arm
+  may be spawned after the suction node starts): a weld nobody hears about would otherwise
+  leave that slot to grab the first real item with its name.
 - `put_item COLOUR SHAPE X Y` puts one item on the belt by hand, for trying `pick_place`.
 - The spawner removes the oldest item before reusing its name, so each bin keeps its most
   recent items. It does so right after spawning the item before, so the old model is surely
@@ -231,8 +237,9 @@ changing a file, not code.
 4. Lift fully, which also restarts the belt, since the arm is now clear of it. Move over the
    item's bin → lower to 10 mm above the walls → suction off → back to the ready pose.
    Once a few items lie in a bin, the heap can stand higher than the walls: then the carried
-   item comes to rest on it on the way down. The arm stops there (it stalls, which the sorter
-   notices), and the item is let go right there.
+   item comes to rest on it on the way down, and the arm can't get to its target (it stalled,
+   which first stopped the sorter). So the quill gets the time the way down takes plus 0.15 s,
+   and the item is let go wherever it is then.
 5. Log, e.g. `#7 red cube → bin 1 (3.4 s)`.
 
 **On the move (stage 6):** the belt never stops.
@@ -246,6 +253,12 @@ changing a file, not code.
 - **Skip**: if the arm can't reach an item before it leaves the pick zone, skip it and log
   `missed #9 (arm busy)`. It rides into the catch box. A skipped item is never put in a
   wrong bin.
+- As built: the arm meets an item 20 mm over its top, with a 0.25 s margin on the move time,
+  and keeps 0.6 s of following inside the pick zone (lower, grip once the cup is over the
+  item, lift until the item is 30 mm over the belt; the cup rises fully while the arm swings
+  to the bin). It aims 30 ms ahead of the item. The suction node reports how far the item's
+  true centre was from the cup's axis at each grip, which measures the lag: within 1.5 mm at
+  50 mm/s, mostly within 5 mm at 100 mm/s (once 13 mm).
 
 Ctrl-C stops the belt and releases the suction.
 
@@ -281,7 +294,7 @@ only from the camera and the encoder, exactly as they would on a real belt.
 | `/scara/j1_cmd` … `j3_cmd`, `/joint_states` | as in the driller | sorter ↔ motors |
 | `/suction` | std_srvs/SetBool (service) | sorter → suction node |
 | `/items/spawned` | scara_sort_msgs/SpawnedItem | spawner → referee (the truth) |
-| `/gz/poses` | tf2_msgs/TFMessage | `gz_poses` → suction node, referee, vision_check |
+| `/gz/poses` | tf2_msgs/TFMessage | `gz_poses` → referee, vision_check (the suction node reads Gazebo's poses and joint states directly) |
 | `/world/sort_cell/create`, `/remove` | ros_gz_interfaces SpawnEntity, DeleteEntity (services, bridged) | spawner, suction node → Gazebo |
 | `/sort_markers` | visualization_msgs/MarkerArray | sorter → RViz: items labelled with their bin, pick zone, bins |
 
